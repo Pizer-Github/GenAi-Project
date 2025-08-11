@@ -2,8 +2,9 @@
 
 from transformers import pipeline
 
-grammar_pipeline = pipeline("text2text-generation", model="vennify/t5-base-grammar-correction")
+grammar_pipeline = pipeline("text2text-generation", model="google/flan-t5-small")
 
 def correct_grammar(text):
-    result = grammar_pipeline(text, max_length=256)[0]['generated_text']
+    prompt = f"Fix the grammar in this text: {text}"
+    result = grammar_pipeline(prompt, max_length=256)[0]['generated_text']
     return result

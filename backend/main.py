@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,11 +10,18 @@ from grammar import correct_grammar
 from summarizer import summarize_text
 from plagiarism import check_plagiarism
 
-app = FastAPI()
+app = FastAPI(
+    title="TextForge AI API",
+    description="AI-powered text processing: Paraphrasing, Grammar Checking, Plagiarism Detection, and Summarization",
+    version="1.0.0"
+)
+
+# Production CORS settings
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for network access
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,6 +33,19 @@ class TextRequest(BaseModel):
 class PlagiarismRequest(BaseModel):
     text: str
     reference_texts: list[str] = []
+
+@app.get("/")
+def root():
+    return {
+        "message": "TextForge AI API",
+        "version": "1.0.0",
+        "status": "healthy",
+        "features": ["paraphrase", "grammar", "plagiarism", "summarize", "file_upload"]
+    }
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "message": "TextForge AI Backend is running!"}
 
 @app.post("/paraphrase")
 def paraphrase_endpoint(req: TextRequest):
@@ -186,7 +207,8 @@ async def upload_plagiarism_endpoint(file: UploadFile = File(...)):
         **result
     }
 
-# Health check endpoint
-@app.get("/health")
-def health_check():
-    return {"status": "healthy", "message": "TextForge AI Backend is running!"}
+# For production deployment
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)

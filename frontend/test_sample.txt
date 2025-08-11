@@ -1,0 +1,11 @@
+This is a sample text file for testing the file upload functionality of TextForge AI.
+
+The application now supports uploading text files (.txt and .md formats) and processing them with all four AI features:
+1. Paraphrasing - Rewrites text while maintaining meaning
+2. Grammar checking - Identifies and corrects grammatical errors
+3. Plagiarism detection - Compares against reference texts
+4. Text summarization - Creates concise summaries
+
+You can upload files up to 10KB in size. The original text from the file will be displayed in the input area, and the processed result will appear in the output area.
+
+This feature makes it easy to process longer documents without having to copy and paste text manually.
