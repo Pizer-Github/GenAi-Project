@@ -1,12 +1,11 @@
 import os
 import gc
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import PyPDF2
-import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="TextForge AI API",
-    description="Lightweight AI text processing",
+    description="AI-powered text processing: Paraphrasing, Grammar Checking, Plagiarism Detection, and Summarization",
     version="1.0.0"
 )
 
@@ -36,97 +35,63 @@ class PlagiarismRequest(BaseModel):
     text: str
     reference_texts: list[str] = []
 
-# Simple rule-based implementations to avoid loading heavy models
-def simple_paraphrase(text):
-    """Simple rule-based paraphrasing"""
-    # Basic synonym replacements
-    replacements = {
-        "good": "excellent", "bad": "poor", "big": "large", "small": "tiny",
-        "happy": "joyful", "sad": "sorrowful", "fast": "quick", "slow": "gradual",
-        "the": "a", "and": "plus", "but": "however", "because": "since",
-        "very": "extremely", "really": "truly", "quite": "rather"
-    }
-    
-    words = text.split()
-    result = []
-    
-    for word in words:
-        clean_word = re.sub(r'[^\w]', '', word.lower())
-        if clean_word in replacements:
-            # Keep original punctuation
-            punctuation = re.findall(r'[^\w]', word)
-            new_word = replacements[clean_word]
-            if word[0].isupper():
-                new_word = new_word.capitalize()
-            result.append(new_word + ''.join(punctuation))
-        else:
-            result.append(word)
-    
-    return ' '.join(result)
+# Global variables for lazy loading models
+_paraphraser = None
+_grammar_checker = None
+_summarizer = None
+_plagiarism_checker = None
 
-def simple_grammar_check(text):
-    """Simple rule-based grammar correction"""
-    # Basic corrections
-    text = re.sub(r'\bi\b', 'I', text)  # Capitalize 'I'
-    text = re.sub(r'\.([a-z])', r'. \1', text)  # Space after period
-    text = re.sub(r',([a-zA-Z])', r', \1', text)  # Space after comma
-    text = re.sub(r'\s+', ' ', text)  # Multiple spaces to single
-    text = text.strip()
-    
-    # Capitalize first letter
-    if text and text[0].islower():
-        text = text[0].upper() + text[1:]
-    
-    return text
+def get_paraphraser():
+    """Lazy load paraphraser to save memory"""
+    global _paraphraser
+    if _paraphraser is None:
+        logger.info("Loading paraphraser model...")
+        from paraphraser import paraphrase_text
+        _paraphraser = paraphrase_text
+        # Force garbage collection
+        gc.collect()
+    return _paraphraser
 
-def simple_summarize(text):
-    """Simple extractive summarization"""
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
-    
-    if len(sentences) <= 3:
-        return text
-    
-    # Take first and last sentences, and one from middle
-    summary_sentences = [
-        sentences[0],
-        sentences[len(sentences)//2],
-        sentences[-1]
-    ]
-    
-    return '. '.join(summary_sentences) + '.'
+def get_grammar_checker():
+    """Lazy load grammar checker to save memory"""
+    global _grammar_checker
+    if _grammar_checker is None:
+        logger.info("Loading grammar checker model...")
+        from grammar import correct_grammar
+        _grammar_checker = correct_grammar
+        # Force garbage collection
+        gc.collect()
+    return _grammar_checker
 
-def simple_plagiarism_check(text, reference_texts):
-    """Simple similarity-based plagiarism detection"""
-    text_words = set(text.lower().split())
-    
-    similarities = []
-    for ref_text in reference_texts:
-        ref_words = set(ref_text.lower().split())
-        if len(text_words) == 0 or len(ref_words) == 0:
-            similarity = 0.0
-        else:
-            intersection = text_words.intersection(ref_words)
-            similarity = len(intersection) / len(text_words.union(ref_words))
-        similarities.append(similarity)
-    
-    max_similarity = max(similarities) if similarities else 0.0
-    is_plagiarized = max_similarity > 0.3
-    
-    return {
-        "is_plagiarized": is_plagiarized,
-        "similarity_percentage": max_similarity * 100,
-        "message": f"{'Potential plagiarism detected' if is_plagiarized else 'No significant plagiarism detected'}"
-    }
+def get_summarizer():
+    """Lazy load summarizer to save memory"""
+    global _summarizer
+    if _summarizer is None:
+        logger.info("Loading summarizer model...")
+        from summarizer import summarize_text
+        _summarizer = summarize_text
+        # Force garbage collection
+        gc.collect()
+    return _summarizer
+
+def get_plagiarism_checker():
+    """Lazy load plagiarism checker to save memory"""
+    global _plagiarism_checker
+    if _plagiarism_checker is None:
+        logger.info("Loading plagiarism checker model...")
+        from plagiarism import check_plagiarism
+        _plagiarism_checker = check_plagiarism
+        # Force garbage collection
+        gc.collect()
+    return _plagiarism_checker
 
 @app.get("/")
 def root():
     return {
-        "message": "TextForge AI API - Ultra Lite",
+        "message": "TextForge AI API",
         "version": "1.0.0",
         "status": "healthy",
-        "features": ["paraphrase", "grammar", "plagiarism", "summarize", "file_upload"],
-        "note": "Using lightweight rule-based processing for memory efficiency"
+        "features": ["paraphrase", "grammar", "plagiarism", "summarize", "file_upload"]
     }
 
 @app.get("/health")
@@ -136,7 +101,10 @@ def health_check():
 @app.post("/paraphrase")
 def paraphrase_endpoint(req: TextRequest):
     try:
-        result = simple_paraphrase(req.text)
+        paraphraser = get_paraphraser()
+        result = paraphraser(req.text)
+        # Force garbage collection after processing
+        gc.collect()
         return {"paraphrased": result}
     except Exception as e:
         logger.error(f"Paraphrase error: {str(e)}")
@@ -145,7 +113,10 @@ def paraphrase_endpoint(req: TextRequest):
 @app.post("/grammar")
 def grammar_endpoint(req: TextRequest):
     try:
-        result = simple_grammar_check(req.text)
+        grammar_checker = get_grammar_checker()
+        result = grammar_checker(req.text)
+        # Force garbage collection after processing
+        gc.collect()
         return {"corrected": result}
     except Exception as e:
         logger.error(f"Grammar error: {str(e)}")
@@ -154,7 +125,10 @@ def grammar_endpoint(req: TextRequest):
 @app.post("/summarize")
 def summarize_endpoint(req: TextRequest):
     try:
-        result = simple_summarize(req.text)
+        summarizer = get_summarizer()
+        result = summarizer(req.text)
+        # Force garbage collection after processing
+        gc.collect()
         return {"summary": result}
     except Exception as e:
         logger.error(f"Summarize error: {str(e)}")
@@ -163,6 +137,7 @@ def summarize_endpoint(req: TextRequest):
 @app.post("/plagiarism")
 def plagiarism_endpoint(req: PlagiarismRequest):
     try:
+        # If no reference texts provided, use some default ones for demonstration
         if not req.reference_texts:
             default_references = [
                 "To be or not to be, that is the question.",
@@ -175,20 +150,25 @@ def plagiarism_endpoint(req: PlagiarismRequest):
         else:
             reference_texts = req.reference_texts
         
-        result = simple_plagiarism_check(req.text, reference_texts)
+        plagiarism_checker = get_plagiarism_checker()
+        result = plagiarism_checker(req.text, reference_texts)
+        # Force garbage collection after processing
+        gc.collect()
         return result
     except Exception as e:
         logger.error(f"Plagiarism error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing text")
 
 def extract_text_from_pdf(pdf_content: bytes) -> str:
-    """Extract text from PDF file content using PyPDF2."""
+    """
+    Extract text from PDF file content using PyPDF2.
+    """
     try:
         pdf_file = io.BytesIO(pdf_content)
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         
         text_content = ""
-        for page_num in range(min(len(pdf_reader.pages), 5)):  # Limit to 5 pages
+        for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
             text_content += page.extract_text() + "\n"
         
@@ -200,11 +180,15 @@ def extract_text_from_pdf(pdf_content: bytes) -> str:
     except Exception as e:
         raise HTTPException(
             status_code=400, 
-            detail=f"Error extracting text from PDF: {str(e)}"
+            detail=f"Error extracting text from PDF: {str(e)}. Please ensure it's a valid PDF file."
         )
 
+# File upload helper function
 async def extract_text_from_file(file: UploadFile) -> str:
-    """Extract text content from uploaded file."""
+    """
+    Extract text content from uploaded file.
+    Supports .txt, .md, and .pdf files.
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     
@@ -219,10 +203,8 @@ async def extract_text_from_file(file: UploadFile) -> str:
         )
     
     try:
-        # Read file content with size limit
+        # Read file content
         content = await file.read()
-        if len(content) > 1024 * 1024:  # 1MB limit
-            raise HTTPException(status_code=400, detail="File too large. Max 1MB.")
         
         # Handle different file types
         if file_extension == '.pdf':
@@ -232,18 +214,26 @@ async def extract_text_from_file(file: UploadFile) -> str:
             try:
                 text_content = content.decode('utf-8')
             except UnicodeDecodeError:
+                # Try other encodings
                 try:
                     text_content = content.decode('latin-1')
                 except UnicodeDecodeError:
-                    raise HTTPException(status_code=400, detail="Unable to read file")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Unable to read file. Please ensure it's a valid text file."
+                    )
         
         # Validate content length
         if len(text_content.strip()) == 0:
             raise HTTPException(status_code=400, detail="File appears to be empty")
         
-        # Limit text size for processing
-        if len(text_content) > 5000:
-            text_content = text_content[:5000] + "... (truncated)"
+        # Limit file size - reduce limits for memory constraints
+        max_length = 20000 if file_extension == '.pdf' else 5000
+        if len(text_content) > max_length:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File content too large. Please keep content under {max_length//1000}KB."
+            )
             
         # Clean up memory
         del content
@@ -261,7 +251,12 @@ async def extract_text_from_file(file: UploadFile) -> str:
 async def upload_paraphrase_endpoint(file: UploadFile = File(...)):
     try:
         text_content = await extract_text_from_file(file)
-        result = simple_paraphrase(text_content)
+        paraphraser = get_paraphraser()
+        result = paraphraser(text_content)
+        
+        # Clean up memory
+        gc.collect()
+        
         return {
             "filename": file.filename,
             "original_text": text_content,
@@ -275,7 +270,12 @@ async def upload_paraphrase_endpoint(file: UploadFile = File(...)):
 async def upload_grammar_endpoint(file: UploadFile = File(...)):
     try:
         text_content = await extract_text_from_file(file)
-        result = simple_grammar_check(text_content)
+        grammar_checker = get_grammar_checker()
+        result = grammar_checker(text_content)
+        
+        # Clean up memory
+        gc.collect()
+        
         return {
             "filename": file.filename,
             "original_text": text_content,
@@ -289,7 +289,12 @@ async def upload_grammar_endpoint(file: UploadFile = File(...)):
 async def upload_summarize_endpoint(file: UploadFile = File(...)):
     try:
         text_content = await extract_text_from_file(file)
-        result = simple_summarize(text_content)
+        summarizer = get_summarizer()
+        result = summarizer(text_content)
+        
+        # Clean up memory
+        gc.collect()
+        
         return {
             "filename": file.filename,
             "original_text": text_content,
@@ -313,7 +318,12 @@ async def upload_plagiarism_endpoint(file: UploadFile = File(...)):
             "I have a dream that one day this nation will rise up and live out the true meaning of its creed."
         ]
         
-        result = simple_plagiarism_check(text_content, default_references)
+        plagiarism_checker = get_plagiarism_checker()
+        result = plagiarism_checker(text_content, default_references)
+        
+        # Clean up memory
+        gc.collect()
+        
         return {
             "filename": file.filename,
             "original_text": text_content,
@@ -327,4 +337,4 @@ async def upload_plagiarism_endpoint(file: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main_ultra_lite:app", host="0.0.0.0", port=port)
+    uvicorn.run("main_optimized:app", host="0.0.0.0", port=port)
