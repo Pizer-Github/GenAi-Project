@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://textforge-ai-backend.onrender.com';
 
 // Main App component
 const App = () => {
@@ -83,7 +83,7 @@ const App = () => {
             if (error.response) {
                 throw new Error(`Server error: ${error.response.status} - ${error.response.data?.detail || error.response.statusText}`);
             } else if (error.request) {
-                throw new Error('Network error: Could not connect to the backend server. Make sure it\'s running on http://localhost:8000');
+                throw new Error('Network error: Could not connect to the backend server.');
             } else {
                 throw new Error(`Request error: ${error.message}`);
             }
@@ -202,7 +202,7 @@ const App = () => {
                 const detail = error.response.data?.detail || error.response.statusText;
                 setErrorMessage(`Server error: ${error.response.status} - ${detail}`);
             } else if (error.request) {
-                setErrorMessage('Network error: Could not connect to the backend server. Make sure it\'s running on http://localhost:8000');
+                setErrorMessage('Network error: Could not connect to the backend server.');
             } else {
                 setErrorMessage(`Request error: ${error.message}`);
             }
